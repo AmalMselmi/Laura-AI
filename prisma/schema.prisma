@@ -1,0 +1,314 @@
+// Prisma is optional tooling for browsing / introspecting the same database Alembic manages.
+// Do NOT use `prisma migrate` for this repo — Python migrations live in backend/alembic/.
+// Set PRISMA_DATABASE_URL (see prisma/README.md), then: npm run prisma:pull
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("PRISMA_DATABASE_URL")
+}
+
+model alembic_version {
+  version_num String @id(map: "alembic_version_pkc") @db.VarChar(32)
+}
+
+model async_jobs {
+  id            String           @id @db.Uuid
+  type          String           @db.VarChar(50)
+  status        async_job_status @default(queued)
+  progress      Int              @default(0)
+  user_id       String?          @db.Uuid
+  input_data    Json?            @db.Json
+  result_data   Json?            @db.Json
+  error_message String?
+  created_at    DateTime         @default(now()) @db.Timestamp(6)
+  updated_at    DateTime         @default(now()) @db.Timestamp(6)
+  completed_at  DateTime?        @db.Timestamp(6)
+  users         users?           @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([status], map: "idx_jobs_status")
+  @@index([user_id], map: "idx_jobs_user")
+}
+
+model dicom_files {
+  id            String        @id @db.Uuid
+  folder_id     String        @db.Uuid
+  name          String        @db.VarChar(255)
+  size_bytes    BigInt?
+  modality      String?       @db.VarChar(20)
+  file_url      String?       @db.VarChar(1000)
+  upload_date   DateTime      @default(now()) @db.Timestamp(6)
+  dicom_folders dicom_folders @relation(fields: [folder_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+}
+
+model dicom_folders {
+  id             String         @id @db.Uuid
+  radiologist_id String         @db.Uuid
+  patient_name   String         @db.VarChar(255)
+  patient_id     String?        @db.VarChar(50)
+  pathology      String?        @db.VarChar(500)
+  modality       String?        @db.VarChar(50)
+  report_content String?
+  report_status  report_status  @default(none)
+  share_token    String?        @db.VarChar(50)
+  pacs_imported  Boolean        @default(false)
+  pacs_study_uid String?        @db.VarChar(200)
+  finalized_at   DateTime?      @db.Timestamp(6)
+  created_at     DateTime       @default(now()) @db.Timestamp(6)
+  updated_at     DateTime       @default(now()) @db.Timestamp(6)
+  dicom_files    dicom_files[]
+  users          users          @relation(fields: [radiologist_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  shared_links   shared_links[]
+
+  @@index([radiologist_id], map: "idx_dicom_rad")
+  @@index([report_status], map: "idx_dicom_status")
+}
+
+model document_folders {
+  id                String              @id @db.Uuid
+  user_id           String              @db.Uuid
+  name              String              @db.VarChar(255)
+  description       String?
+  share_token       String?             @db.VarChar(50)
+  shared_at         DateTime?           @db.Timestamp(6)
+  created_at        DateTime            @default(now()) @db.Timestamp(6)
+  users             users               @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  medical_documents medical_documents[]
+  shared_links      shared_links[]
+
+  @@index([user_id], map: "idx_folders_user")
+}
+
+model gdpr_requests {
+  id         String              @id @db.Uuid
+  user_id    String?             @db.Uuid
+  user_name  String?             @db.VarChar(255)
+  type       String              @db.VarChar(100)
+  status     gdpr_request_status @default(pending)
+  notes      String?
+  created_at DateTime            @default(now()) @db.Timestamp(6)
+  updated_at DateTime            @default(now()) @db.Timestamp(6)
+  users      users?              @relation(fields: [user_id], references: [id], onUpdate: NoAction)
+}
+
+model lab_info {
+  id            String   @id @db.Uuid
+  user_id       String   @unique @db.Uuid
+  name          String?  @db.VarChar(255)
+  address       String?
+  postal_code   String?  @db.VarChar(20)
+  city          String?  @db.VarChar(100)
+  country       String?  @db.VarChar(100)
+  phone         String?  @db.VarChar(50)
+  email         String?  @db.VarChar(255)
+  website       String?  @db.VarChar(255)
+  rpps          String?  @db.VarChar(50)
+  siret         String?  @db.VarChar(50)
+  logo_url      String?  @db.VarChar(1000)
+  updated_at    DateTime @default(now()) @db.Timestamp(6)
+  logo_data_url String?
+  users         users    @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+}
+
+model medical_documents {
+  id               String            @id @db.Uuid
+  user_id          String            @db.Uuid
+  name             String            @db.VarChar(255)
+  type             document_type
+  date             DateTime          @db.Date
+  size             String?           @db.VarChar(20)
+  size_bytes       BigInt?
+  doctor           String?           @db.VarChar(255)
+  pathology        String?           @db.VarChar(500)
+  notes            String?
+  ai_analyzed      Boolean           @default(false)
+  from_scan        Boolean           @default(false)
+  folder_id        String?           @db.Uuid
+  share_token      String?           @db.VarChar(50)
+  file_url         String?           @db.VarChar(1000)
+  image_data_url   String?
+  report_content   String?
+  created_at       DateTime          @default(now()) @db.Timestamp(6)
+  updated_at       DateTime          @default(now()) @db.Timestamp(6)
+  document_folders document_folders? @relation(fields: [folder_id], references: [id], onUpdate: NoAction)
+  users            users             @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  shared_links     shared_links[]
+
+  @@index([date], map: "idx_docs_date")
+  @@index([folder_id], map: "idx_docs_folder")
+  @@index([from_scan], map: "idx_docs_from_scan")
+  @@index([type], map: "idx_docs_type")
+  @@index([user_id], map: "idx_docs_user")
+}
+
+model pacs_servers {
+  id                String        @id @db.Uuid
+  radiologist_id    String        @db.Uuid
+  name              String        @db.VarChar(255)
+  host              String        @db.VarChar(255)
+  port              Int           @default(104)
+  ae_title          String        @db.VarChar(50)
+  calling_ae_title  String        @default("LAURA_AI") @db.VarChar(50)
+  protocol          pacs_protocol @default(DICOM)
+  web_url           String?       @db.VarChar(500)
+  tls               Boolean       @default(false)
+  active            Boolean       @default(true)
+  connection_status String        @default("unknown") @db.VarChar(20)
+  last_connected    DateTime?     @db.Timestamp(6)
+  created_at        DateTime      @default(now()) @db.Timestamp(6)
+  users             users         @relation(fields: [radiologist_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([radiologist_id], map: "idx_pacs_rad")
+}
+
+model plans {
+  id         String   @id @db.VarChar(50)
+  name       String   @db.VarChar(100)
+  price      Decimal  @default(0) @db.Decimal(10, 2)
+  storage_gb Int      @default(1)
+  max_scans  Int      @default(5)
+  ai_quota   Int      @default(5)
+  features   Json?    @db.Json
+  active     Boolean  @default(true)
+  updated_at DateTime @default(now()) @db.Timestamp(6)
+  users      users[]
+}
+
+model refresh_tokens {
+  id         String   @id @db.Uuid
+  user_id    String   @db.Uuid
+  token_hash String   @unique @db.VarChar(255)
+  expires_at DateTime @db.Timestamp(6)
+  revoked    Boolean  @default(false)
+  created_at DateTime @default(now()) @db.Timestamp(6)
+  users      users    @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+}
+
+model scan_usage {
+  id         String   @id @db.Uuid
+  user_id    String   @db.Uuid
+  month      DateTime @db.Date
+  scans_used Int      @default(0)
+  ai_used    Int      @default(0)
+  users      users    @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([user_id, month], map: "uq_scan_usage_user_month")
+  @@index([user_id, month], map: "idx_scan_usage_month")
+}
+
+model shared_links {
+  token             String             @id @db.VarChar(50)
+  type              shared_link_type
+  label             String?            @db.VarChar(255)
+  created_by        String?            @db.Uuid
+  document_id       String?            @db.Uuid
+  folder_id         String?            @db.Uuid
+  dicom_folder_id   String?            @db.Uuid
+  report_data       Json?              @db.Json
+  expires_at        DateTime           @db.Timestamp(6)
+  created_at        DateTime           @default(now()) @db.Timestamp(6)
+  users             users?             @relation(fields: [created_by], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  dicom_folders     dicom_folders?     @relation(fields: [dicom_folder_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  medical_documents medical_documents? @relation(fields: [document_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  document_folders  document_folders?  @relation(fields: [folder_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([expires_at], map: "idx_shared_expires")
+  @@index([token], map: "idx_shared_token")
+}
+
+model storage_usage {
+  id         String   @id @db.Uuid
+  user_id    String   @unique @db.Uuid
+  used_gb    Decimal  @default(0) @db.Decimal(10, 3)
+  updated_at DateTime @default(now()) @db.Timestamp(6)
+  users      users    @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+}
+
+model users {
+  id                    String              @id @db.Uuid
+  email                 String              @unique @db.VarChar(255)
+  password_hash         String              @db.VarChar(255)
+  role                  user_role
+  name                  String              @db.VarChar(255)
+  avatar_url            String?             @db.VarChar(500)
+  country               String              @default("FR") @db.VarChar(10)
+  plan_id               String              @default("free") @db.VarChar(50)
+  status                user_status         @default(active)
+  created_at            DateTime            @default(now()) @db.Timestamp(6)
+  updated_at            DateTime            @default(now()) @db.Timestamp(6)
+  last_active_at        DateTime            @default(now()) @db.Timestamp(6)
+  radiologist_title     String?             @db.VarChar(200)
+  radiologist_specialty String?             @db.VarChar(255)
+  async_jobs            async_jobs[]
+  dicom_folders         dicom_folders[]
+  document_folders      document_folders[]
+  gdpr_requests         gdpr_requests[]
+  lab_info              lab_info?
+  medical_documents     medical_documents[]
+  pacs_servers          pacs_servers[]
+  refresh_tokens        refresh_tokens[]
+  scan_usage            scan_usage[]
+  shared_links          shared_links[]
+  storage_usage         storage_usage?
+  plans                 plans               @relation(fields: [plan_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([email], map: "idx_users_email")
+  @@index([plan_id], map: "idx_users_plan")
+  @@index([role], map: "idx_users_role")
+}
+
+enum async_job_status {
+  queued
+  processing
+  completed
+  failed
+}
+
+enum document_type {
+  ordonnance
+  analyse
+  imagerie
+  rapport
+  certificat
+  autre
+}
+
+enum gdpr_request_status {
+  pending
+  in_progress
+  completed
+}
+
+enum pacs_protocol {
+  DICOM
+  DICOMweb
+}
+
+enum report_status {
+  none
+  generating
+  ai_generated
+  in_review
+  finalized
+}
+
+enum shared_link_type {
+  folder
+  document
+  report
+}
+
+enum user_role {
+  patient
+  radiologist
+  admin
+}
+
+enum user_status {
+  active
+  suspended
+  pending
+}
